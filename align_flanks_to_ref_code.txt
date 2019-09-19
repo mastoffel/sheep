@@ -1,0 +1,21 @@
+# Re-align SNP chip SNP flanking sequences (taken from old alignment 3.1) to
+# Rambouillet genome
+
+module load roslin/samtools/1.9
+
+# make sure flanking sequences do not have a space in between < and SNP name
+bwa mem -t 4 genome/GCA_002742125.1_Oar_rambouillet_v1.0_genomic.fa flanking_seqs/20190912_HD_SNPs_2.fasta  > sheep_hd.sam
+
+# how many reads did not align to reference
+samtools view -c -f 4 sheep_hd.sam (flag 4 = not aligned, -c == output number of reads, -f = output whatever number specifies)
+
+# filter out reads that did not align (-F 4) and convert from sam to bam
+samtools view -SbF 4 sheep_hd.sam > sheep_hd_filt.bam
+
+# sort bam file by genomic coordinates (not really necessary but probably nice)
+samtools sort sheep_hd_filt.bam -o sheep_hd_filt_sorted
+
+
+
+# bam to sam
+samtools view -h -o sheep_hd_filt.sam sheep_hd_filt.bam
