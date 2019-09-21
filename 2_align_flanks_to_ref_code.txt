@@ -1,7 +1,11 @@
 # Re-align SNP chip SNP flanking sequences (taken from old alignment 3.1) to
 # Rambouillet genome
 
+# load bwa and samtools with e.g.
 module load roslin/samtools/1.9
+
+# index ref genome
+bwa index genome/GCA_002742125.1_Oar_rambouillet_v1.0_genomic.fa
 
 # make sure flanking sequences do not have a space in between < and SNP name
 bwa mem -t 4 genome/GCA_002742125.1_Oar_rambouillet_v1.0_genomic.fa flanking_seqs/20190912_HD_SNPs_2.fasta  > sheep_hd.sam

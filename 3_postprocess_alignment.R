@@ -1,7 +1,11 @@
+# postprocess bwa alignment of SNP probes to Rambouillet Genome
+# output files with all mapped probes and all multimapped probes for LD analysis etc.
+
 library(Rsamtools)
 library(snpStats)
 library(tidyverse)
 library(processx)
+library("corrr")
 
 # get HD SNP chip data
 sheep_bed <- "data/SNP_chip/Plates_1-2_HD_QC2.bed"
@@ -14,14 +18,14 @@ snps_hd <- sample_hd$map %>%
     .$snp.name
 
 # get LD SNP chip data
-sheep_bed <- "data/SNP_chip/Plates_1to87_QC3.bed"
-sheep_bim <- "data/SNP_chip/Plates_1to87_QC3.bim"
-sheep_fam <- "data/SNP_chip/Plates_1to87_QC3.fam"
-# 
-sample_ld <- read.plink(sheep_bed, sheep_bim, sheep_fam)
-snps_ld <- sample_ld$map %>% 
-    #filter(chromosome %in% 1:26) %>% 
-    .$snp.name
+# sheep_bed <- "data/SNP_chip/Plates_1to87_QC3.bed"
+# sheep_bim <- "data/SNP_chip/Plates_1to87_QC3.bim"
+# sheep_fam <- "data/SNP_chip/Plates_1to87_QC3.fam"
+# # 
+# sample_ld <- read.plink(sheep_bed, sheep_bim, sheep_fam)
+# snps_ld <- sample_ld$map %>% 
+#     #filter(chromosome %in% 1:26) %>% 
+#     .$snp.name
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~ load HD chip alignment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 # check where alignment info starts
@@ -33,15 +37,21 @@ sheep_hd_sam_org <- read_delim("data/sheep_genome/aligned/sheep_hd_filt.sam", sk
                                          "cigar", "rnext", "pnext", "tlen",
                                          "seq", "qual", "edit_dist", "mismatch",
                                          "alignment_score", "subopt_alignment_score",
-                                         "alt_hits"))
+                                         "alt_hits")) %>% 
+                           filter(flag %in% c(0,16))
+
+# save bwa sam output as tidy df
+write_delim(sheep_hd_sam_org, "data/sheep_genome/aligned/all_mapped_hd_chip.txt", delim = " ")
+
 
 # we want to have the multiple alignments as tidy data in multiple rows
-sheep_hd_sam <- sheep_hd_sam_org %>% 
+sheep_hd_sam_multimapped <- sheep_hd_sam_org %>% 
+    # selecting all multiple hits
     filter(!is.na(alt_hits)) %>% 
     mutate(alt_hits = str_remove(alt_hits, "XA:Z:")) %>% 
     mutate(alt_hits_list = str_split(alt_hits, ";"))
 
-sheep_hd_sam %>% 
+sheep_hd_sam_multimapped %>% 
     dplyr::select(snp, chr, pos, cigar, alt_hits_list) %>% 
     pmap(function(snp, chr, pos, cigar, alt_hits_list) {
         first_row <- tibble(snp = snp, chr = chr, pos = pos, cigar = cigar)
@@ -57,10 +67,96 @@ sheep_hd_sam %>%
     }
     ) -> all_mults_df
 
+
+# filter out a few more things and only take alignments on chromosomes
 all_mults_df_proc <- all_mults_df %>% 
     bind_rows() %>% 
     mutate(pos = str_remove(pos, "\\-"),
-           pos = str_remove(pos, "\\+"))
+           pos = str_remove(pos, "\\+")) %>% 
+    #filter(str_detect(chr, "^CM")) %>% 
+    mutate(pos = as.numeric(pos))
+
+write_delim(all_mults_df_proc, "data/sheep_genome/aligned/multimapped_hd_chip.txt", delim = " ")
+
+
+
+
+
+
+
+
+
+
+
+
+
+# my tryouts for the LD analysis.
+
+# filter out a few more things and only take alignments on chromosomes
+all_mults_df_proc <- all_mults_df %>% 
+    bind_rows() %>% 
+    mutate(pos = str_remove(pos, "\\-"),
+           pos = str_remove(pos, "\\+")) %>% 
+    filter(str_detect(chr, "^CM")) %>% 
+    mutate(pos = as.numeric(pos))
+
+# newly aligned positions
+sheep_hd_sam_sorted <- sheep_hd_sam_org %>% 
+    dplyr::select(snp, chr, pos) %>% 
+    arrange(chr, pos)
+
+# add multiple alignments to full df
+sheep_all_new_aligns <- sheep_hd_sam_sorted %>% 
+    full_join(all_mults_df_proc)
+
+# remove all the multiple mappings
+sheep_hd_sam_nodup <- sheep_hd_sam_sorted %>% 
+    filter(!(snp %in% all_mults_df_proc$snp))
+
+# for all multimapped snps find 10 snps above and below
+ld_snps <- as.list(rep(NA,100 )) # nrow(all_mults_df_proc)
+
+for (i in 1:100) { # nrow(all_mults_df_proc)
+    chr <- as.character(all_mults_df_proc[i, "chr"])
+    pos <- as.numeric(all_mults_df_proc[i, "pos"])
+    sheep_hd_sam_nodup_sub <- sheep_hd_sam_nodup%>% 
+        filter(chr == chr)
+    index <- which.min(abs(sheep_hd_sam_nodup_sub$pos - pos))
+    lower_snps <- ifelse((index-10) < 1, 1, index-10)
+    upper_snps <- ifelse((index+10) > nrow(sheep_hd_sam_nodup_sub), nrow(sheep_hd_sam_nodup_sub), index+10)
+    ld_snps[i] <- list(unlist(sheep_hd_sam_nodup_sub[c(lower_snps:upper_snps), "snp"]))
+}
+
+
+# genotypes for LD calculations
+genotypes <- as(sample_hd$genotypes, Class = "numeric")
+
+map(1:100, function(x){
+    focal <- all_mults_df_proc$snp[x]
+    others <- ld_snps[[x]]
+    ld <- genotypes[,c(focal, others)] %>% 
+        as_tibble() %>% 
+        correlate() %>% 
+        focus(!!focal) 
+    out <- tibble(snp = focal, mean_ld = mean(ld[[2]], na.rm = TRUE))
+})
+
+
+
+geno_sub %>% 
+    as_tibble() %>% 
+    focus(oar3_OARX_13945879)
+correlate(geno_sub) %>% 
+    focus(oar3_OARX_13914053)
+
+all_mults_df_proc %>% 
+    filter(str_detect(chr, "^CM")) %>% 
+    group_by(snp, chr) %>% 
+    mutate(pos = as.numeric(pos)) %>% 
+    mutate(dist = max(pos) - min(pos)) %>% 
+    ggplot(aes(dist, fill = chr)) + 
+    geom_histogram(bins = 100) +
+    scale_x_log10()
 
 all_mults_df_proc %>% 
     write_delim(path = "data/multimapped_hd_chip.txt")
