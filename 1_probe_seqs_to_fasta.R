@@ -1,9 +1,9 @@
 # Probe sequences to fasta for alignment against new reference
 library(tidyverse)
 library(seqinr)
-flanks_hd <- read_csv("data/sheep_genome/flanking_seqs/SheepHD_AgResearch_Cons_15041608_A.csv", skip = 7) %>% 
+flanks_hd <- read_csv("data/sheep_genome/manifest_files/SheepHD_AgResearch_Cons_15041608_A.csv", skip = 7) %>% 
                 filter(!is.na(AlleleA_ProbeSeq))
-flanks_ld <- read_csv("data/sheep_genome/flanking_seqs/ovinesnp50-genome-assembly-oar-v3-1.csv", skip = 7) %>% 
+flanks_ld <- read_csv("data/sheep_genome/manifest_files/ovinesnp50-genome-assembly-oar-v3-1.csv", skip = 7) %>% 
                 filter(!is.na(AlleleA_ProbeSeq))
 
 # some checks
