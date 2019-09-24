@@ -34,7 +34,7 @@ snps_ld <- sample_ld$map %>%
     .$snp.name
 
 # SNP chip type
-chip <- "hd" # "hd" "ld"
+chip <- "ld" # "hd" "ld"
 
 if (chip == "ld") {
     snps_chip <- snps_ld
@@ -48,16 +48,21 @@ if (chip == "ld") {
 # load file with all mappings (only one row also for multiple alignments)
 all_mapped <- read_delim(paste0("data/sheep_genome/aligned/all_mapped_", chip ,"_chip.txt"), delim = " ")
 # load file with ALL multiple mappings
-multimap <- read_delim(paste0("data/sheep_genome/aligned/multimapped_", chip, "_chip.txt"), delim = " ")
-
+multimap <- read_delim(paste0("data/sheep_genome/aligned/multimapped_", chip, "_chip.txt"), delim = " ") 
 # load file with LD infos >>>> check that its the right file <<<<<<<<<<<<<<<
-lds <- read_delim("data/sheep_genome/susie_ld_mapping_output/10_Multimapped_SNPs_MeanLD.txt", delim = "\t")
+lds <- read_delim("data/sheep_genome/susie_ld_mapping_output/10_Multimapped_SNPs_MeanLD_50K.txt", delim = "\t")
+
+# 2 duplicated rows here
+#dup_rows <- duplicated(data.table::as.data.table(lds))
+#lds <- lds[!dup_rows, ]
 
 # (1) remove all non-chromosome mappings and get snps where only one alignment is left
 snp_filt1 <- multimap %>% 
-    filter(str_detect(chr, "CM")) %>% 
+    #distinct() %>% 
+    filter(str_detect(chr, "^CM")) %>% 
     group_by(snp) %>% 
-    filter(n() == 1)
+    filter(n() == 1) %>% 
+    filter(!(snp == "oar3_OAR15_14252885")) # this snp makes problems
 
 # (2) find all probes where left and right snps 
 # are the same, and where it hence doesnt matter which one to take (so take one of them)
@@ -65,10 +70,18 @@ snp_filt1 <- multimap %>%
 # multiple alignments
 # susie filtered out non-chromosome mappings in her file already. 
 lds2 <- lds %>% 
+    # remove 2 rows which were doubled
+    #distinct() %>% 
+    filter(str_detect(chr, "^CM")) %>% 
+    # add flag and cigar fields
+    left_join(multimap, by = c("snp", "chr", "pos")) %>% 
+    filter(!is.na(cigar)) %>% 
     # and filter out the snps which are 
     mutate(flanking_snps = paste0(LeftSNP, "_", RightSNP)) %>% 
     group_by(flanking_snps) %>%
-    slice(1) 
+    # arrange by position to always slice the same bit (the smaller pos)
+    dplyr::arrange(chr, pos, MeanLD) %>% 
+    dplyr::slice(1) 
 
 # snps with only one mapping left after collapsing
 snp_filt2 <- lds2 %>% 
@@ -106,7 +119,9 @@ check_snps <- snp_filt3 %>%
     arrange(snp)
 sum(duplicated(check_snps$snp))
 
-snps_filts <- bind_rows(snp_filt1, snp_filt2, snp_filt3)
+# bind all snps that we want to keep together
+snps_filts <- bind_rows(snp_filt1, snp_filt2, snp_filt3) 
+sum(duplicated(snps_filts$snp))
 
 # put everthing together
 # check where alignment info starts
@@ -127,19 +142,38 @@ sheep_sam_org <- read_delim(paste0("data/sheep_genome/aligned/sheep_", chip, "_f
                     #filter(mapq >= 10)
 
 
+# add mapq values and select relevant columns
+snps_filts_final <- snps_filts %>% 
+    left_join(sheep_sam_org[c("snp", "mapq")], by = "snp") %>% 
+    dplyr::select(snp, chr, pos, cigar, flag, mapq) %>% 
+    # set mapq value high
+    mutate(mapq = 60)
+
+# sheep_sam_org contains all mapped snps, and multimapped snps appear 
+# only once with one of the mapped positions
 final_snp_set <- sheep_sam_org %>% 
-    # selecting all multiple hits
-    filter(str_detect(chr, "CM")) %>% 
-    # filter out multipple mappings except when resolved and thus present
-    # in snps_filts file
-    filter(is.na(alt_hits) | !(snp %in% snps_filts$snp)) %>% 
-    filter(snp %in% snps_chip) %>% 
+    dplyr::select(snp, chr, pos, cigar, flag, mapq) %>% 
+    # remove snps which we have filtered 
+    filter(!(snp %in% snps_filts_final$snp)) %>% 
+    # and replace with correct positions
+    bind_rows(snps_filts_final) %>% 
+    # filter everything not on chromosomes
+    filter(str_detect(chr, "^CM")) %>% 
+    # filter everything with low mapq value and no multiple mappings
+    filter(mapq > 30) %>% 
     # if aligned to forward strand, add length of alignment to reference, 
     # if aligned to reverse strand, substract 1
-    mutate(pos = ifelse(flag == 0, pos+extractAlignmentRangesOnReference(cigar)[[1]]@width, pos-1))
+    mutate(pos = ifelse(flag == 0, pos+extractAlignmentRangesOnReference(cigar)[[1]]@width, pos-1)) %>% 
+    # retain only snps on the chip
+    filter(snp %in% snps_chip) 
 
+# adjustment to sex chromosome snp position (from plink error)
+if (chip == "hd") {
+    final_snp_set[final_snp_set$snp == "oar3_OARX_58642295", "pos"] <- final_snp_set[final_snp_set$snp == "oar3_OARX_58642295", "pos"] + 1
+    
+}
 
-write_delim(final_snp_set, "data/sheep_genome/aligned/final_probe_alignments/snp_set_HD.txt",
+write_delim(final_snp_set, paste0("data/sheep_genome/aligned/final_probe_alignments/snp_set_", chip, ".txt"),
             delim = " ")
 
 # sanity check 
@@ -147,14 +181,14 @@ sum(duplicated(final_snp_set$snp))
 
 #~~~~~~~~~~~~~~~~~~~~ plot old against new ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 snps_old <- sample_chip$map %>% 
-                rename(snp = snp.name,
+                dplyr::rename(snp = snp.name,
                        chr = chromosome,
                        pos_old = position)
 
 snps_new <- final_snp_set %>% 
                     mutate(chr = str_sub(chr, 7, 8)) %>% 
                     mutate(chr = as.numeric(chr) - 71) %>% 
-                    rename(pos_new = pos)
+                    dplyr::rename(pos_new = pos)
 
 snps_new[snps_new$chr == -71, ]
 
@@ -204,9 +238,9 @@ ggsave(paste0("figs/", chip, "_snps_new_vs_old.jpg"), height = 5, width = 7)
 
 # plot new against new from Rudi #
 rudi_aligned <- read_csv("data/sheep_genome/aligned_by_rudi/SheepHD_AgResearch_Cons_15041608_A.csv.rambo_pos_20190513.csv") %>% 
-                    rename(chr = chrom, snp = entry, pos_rudi = pos)
+    dplyr::rename(chr = chrom, snp = entry, pos_rudi = pos)
 rudi_aligned <- read_csv("data/sheep_genome/aligned_by_rudi/OvineSNP50_B.csv.rambo_pos_20190513.csv") %>% 
-    rename(chr = chrom, snp = entry, pos_rudi = pos)
+    dplyr::rename(chr = chrom, snp = entry, pos_rudi = pos)
 
 # snps_new %>% 
 #     left_join(rudi_aligned, by = c("snp", "chr")) %>% 

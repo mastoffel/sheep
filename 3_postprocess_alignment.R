@@ -30,8 +30,8 @@ snps_ld <- sample_ld$map %>%
 #~~~~~~~~~~~~~~~~~~~~~~~~~ load probe alignment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
 # prep, hd or ld?
-sam_file <- "data/sheep_genome/aligned/sheep_ld_filt.sam"
-chip <- "ld" # needed for file names 
+sam_file <- "data/sheep_genome/aligned/sheep_hd_filt.sam"
+chip <- "hd" # needed for file names 
 output_folder <- "data/sheep_genome/aligned"
 
 # check where alignment info starts
@@ -62,16 +62,20 @@ sheep_sam_multimapped <- sheep_sam_org %>%
     mutate(alt_hits_list = str_split(alt_hits, ";"))
 
 sheep_sam_multimapped %>% 
-    dplyr::select(snp, chr, pos, cigar, alt_hits_list) %>% 
-    pmap(function(snp, chr, pos, cigar, alt_hits_list) {
-        first_row <- tibble(snp = snp, chr = chr, pos = pos, cigar = cigar)
+    dplyr::select(snp, chr, pos, cigar, alt_hits_list, flag) %>% 
+    pmap(function(snp, chr, pos, cigar, alt_hits_list, flag) {
+        first_row <- tibble(snp = snp, chr = chr, pos = pos, cigar = cigar, flag = flag)
         other_rows <- map_df(alt_hits_list, function(x) {
             if (x == "") return()
             splitted <- unlist(str_split(x, ","))
             tibble(snp = snp,
                    chr = splitted[1], 
                    pos = splitted[2], 
-                   cigar = splitted[3])
+                   cigar = splitted[3],
+                   flag = case_when(
+                       str_detect(splitted[2], "\\-") ~ 16,
+                       str_detect(splitted[2], "\\+") ~ 0
+                   ))
         })
         out <- rbind(first_row, other_rows)
     }
