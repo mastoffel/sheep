@@ -32,6 +32,8 @@ map_new$entry[out == 1]
 # 
 # plink name
 sheep_plink_name <- "data/SNP_chip/Plates_1-2_HD_QC2"
+sheep_plink_name <- "data/SNP_chip/ramb_mapping/Plates_1-2_HD_QC3_ram"
+
 # read merged plink data
 sheep_bed <- paste0(sheep_plink_name, ".bed")
 sheep_bim <- paste0(sheep_plink_name, ".bim")

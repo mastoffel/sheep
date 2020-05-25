@@ -1,20 +1,20 @@
 # LD decay plot
 
-system("~/programs/plink --bfile data/SNP_chip/sheep_geno_imputed_04092019 --sheep --r2 --ld-window-r2 0 --ld-window 5000 --ld-window-kb 5000 --out data/ld_decay/sheep_ld")
+system("/usr/local/bin/plink --bfile data/SNP_chip/oar31_mapping/Plates_1to87_QC3 --chr 1-26 --sheep --r2 --ld-window-r2 0 --ld-window 999999 --ld-window-kb 31530 --out data/ld_decay/sheep_ld_oar")
 
 # run from command line
-# cat data/ld_decay/sheep_ld.ld | sed 1,1d | awk -F " " 'function abs(v) {return v < 0 ? -v : v}BEGIN{OFS="\t"}{print abs($5-$2),$7}' | sort -k1,1n > data/ld_decay/sheep_ld_summary 
+# cat data/ld_decay/sheep_ld_oar.ld | sed 1,1d | awk -F " " 'function abs(v) {return v < 0 ? -v : v}BEGIN{OFS="\t"}{print abs($5-$2),$7}' | sort -k1,1n > data/ld_decay/sheep_ld_summary
 
 library(dplyr)
 library(stringr)
 library(ggplot2)
 library(data.table)
-source("../sheep_ID/theme_clean.R")
-sheep_ld <- fread("data/ld_decay/sheep_ld.ld")
+source("../sheep_ID/theme_simple.R")
+sheep_ld <- fread("data/ld_decay/sheep_ld_oar.ld")
 
 
 # calculate distance between snps
-sheep_ld[, dist_kb := (abs(BP_A - BP_B)/1000)] 
+#sheep_ld[, dist_kb := (abs(BP_A - BP_B)/1000)] 
 
 # dplyr approach
 # sheep_ld_df <- sheep_ld %>% 
@@ -48,16 +48,18 @@ dfr1 <-sheep_ld_sum %>% mutate(start=as.integer(str_extract(str_replace_all(dist
                         mid=start+((end-start)/2))
 
 p1 <- ggplot(data=dfr1, aes(x=start,y=mean))+
+    geom_hline(aes(yintercept = 0.276/2), size = 0.3) +
     geom_errorbar(aes(ymin = ci_95_low, ymax = ci_95_high), width = 0,color = "#9ecae1", size = 0.5) +
     geom_errorbar(aes(ymin = ci_80_low, ymax = ci_80_high), width = 0,color = "#4292c6", size = 1) +
     geom_errorbar(aes(ymin = ci_50_low, ymax = ci_50_high), width = 0,color = "#08306b", size = 2) +
     geom_line(aes(x=start,y=mean),size=0.7,alpha=1,colour="black") +
     geom_point(colour="black",fill="#d9d9d9", shape = 21, size =3, stroke = 0.5) +
-    theme_clean() +
-    ylab("LD(r2)") +
+    theme_simple(axis_lines = TRUE, grid_lines = FALSE) +
+    ylab("LD (r2)") +
     xlab("Distance (Kb)") +
+    xlim(c(0,5000)) +
    # theme(legend.position="right") +
-    ggtitle("LD decay in Soay sheep", subtitle = "Mean and 50%, 80% and 95% CI")
+    ggtitle("LD decay in Soay sheep", subtitle = "Mean and 50%, 80% and 95% of pairwise LD comparisons with increasing distance")
 p1
 ggsave("figs/ld_decay_mean_uncertainty.jpg", p1, width = 7, height = 5)
 
@@ -67,7 +69,9 @@ p2 <- ggplot()+
     geom_line(data=dfr1,aes(x=start,y=median),size=0.3,alpha=0.5,colour="grey40")+
     labs(x="Distance (Kilobases)",y=expression(LD~(r^{2})))+
     #scale_x_continuous(breaks=c(0,2*10^6,4*10^6,6*10^6,8*10^6),labels=c("0","2","4","6","8"))+
-    theme_clean()
+    theme_simple()
 p2
+
+max(sheep_ld$R2)
 
 

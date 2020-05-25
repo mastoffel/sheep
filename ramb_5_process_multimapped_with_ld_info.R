@@ -34,7 +34,7 @@ snps_ld <- sample_ld$map %>%
     .$snp.name
 
 # SNP chip type
-chip <- "ld" # "hd" "ld"
+chip <- "hd" # "hd" "ld"
 
 if (chip == "ld") {
     snps_chip <- snps_ld
@@ -50,7 +50,7 @@ all_mapped <- read_delim(paste0("data/sheep_genome/aligned/all_mapped_", chip ,"
 # load file with ALL multiple mappings
 multimap <- read_delim(paste0("data/sheep_genome/aligned/multimapped_", chip, "_chip.txt"), delim = " ") 
 # load file with LD infos >>>> check that its the right file <<<<<<<<<<<<<<<
-lds <- read_delim("data/sheep_genome/susie_ld_mapping_output/10_Multimapped_SNPs_MeanLD_50K.txt", delim = "\t")
+lds <- read_delim("data/sheep_genome/susie_ld_mapping_output/10_Multimapped_SNPs_MeanLD.txt", delim = "\t")
 
 # 2 duplicated rows here
 #dup_rows <- duplicated(data.table::as.data.table(lds))
@@ -110,7 +110,7 @@ snp_filt3 <- lds2 %>%
         # check whether highest LD among multiple alignments is high and whether all others are small (hd?)
         #(max(MeanLD) > 0.3) & all(MeanLD[-which.max(MeanLD)] < 0.15), 1, 0
         # if highest LD is at least r2 = 0.1 higher than others, take that
-        (max(MeanLD) - sort(MeanLD, decreasing = TRUE)[2]) >= 0.1, 1, 0)) %>%  #  MeanLD[-which.max(MeanLD)]
+        (max(MeanLD) - sort(MeanLD, decreasing = TRUE)[2]) >= 0.2, 1, 0)) %>%  #  MeanLD[-which.max(MeanLD)]
     filter(highest_ld == 1) %>%
     filter(MeanLD == max(MeanLD))
 
@@ -182,7 +182,7 @@ sum(duplicated(final_snp_set$snp))
 #~~~~~~~~~~~~~~~~~~~~ plot old against new ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 snps_old <- sample_chip$map %>% 
                 dplyr::rename(snp = snp.name,
-                       chr = chromosome,
+                       chr_old = chromosome,
                        pos_old = position)
 
 snps_new <- final_snp_set %>% 
@@ -193,10 +193,15 @@ snps_new <- final_snp_set %>%
 snps_new[snps_new$chr == -71, ]
 
 snps_oldnew <- snps_new %>% 
-                    left_join(snps_old, by = c("snp", "chr")) %>% 
-                    dplyr::select(snp, chr, pos_new, pos_old) %>% 
+                    left_join(snps_old, by = c("snp")) %>% 
+                    dplyr::select(snp, chr, chr_old, pos_new, pos_old) %>% 
                     mutate(pos_old = ifelse(is.na(pos_old), -1, pos_old),
                            pos_new = ifelse(is.na(pos_new), -1, pos_new))
+
+# check chromosome changes
+out <- snps_oldnew %>% filter(chr != chr_old) 
+out[out$snp == "s23340.1", ]
+
 
 library(viridis)
 
@@ -228,13 +233,28 @@ my_cols <- c("#ffd16a",
             "#ffcab2",
             "#363400")
 snps_oldnew %>% 
-    mutate(chr = as.factor(chr)) %>% 
+    #mutate(chr = as.factor(chr)) %>% 
     sample_frac(1) %>% 
-ggplot(aes(pos_new, pos_old, fill = chr)) + geom_point(shape = 21, size = 2, alpha = 1, lwd = 0.1) +
+ggplot(aes(pos_new, pos_old)) + geom_point(shape = 21, size = 2, alpha = 1, lwd = 0.1) +
     scale_fill_manual(values = my_cols) +
-    theme_bw() -> newold_pos
+    theme_bw() 
 
 ggsave(paste0("figs/", chip, "_snps_new_vs_old.jpg"), height = 5, width = 7)
+
+
+# plot old against new on chr 27
+snps_oldnew %>% 
+    mutate(chr = as.factor(chr)) %>% 
+    filter(chr == 27) %>% 
+    sample_frac(1) %>% 
+    ggplot(aes(pos_new, pos_old, fill = chr)) + geom_point(shape = 21, size = 2, alpha = 1, lwd = 0.1) +
+    scale_fill_manual(values = my_cols) +
+    theme_bw()
+
+ggsave("../sheep_imputation/figs/pos_new_vs_old_X_ld.jpg", width = 5, height = 3)
+
+check <- snps_oldnew %>% filter(chr == 27) %>% arrange(pos_old) %>% 
+        filter(pos_old == -1) %>% write_delim("../sheep_imputation/data/old_unmmapped_X_ld.txt")
 
 # plot new against new from Rudi #
 rudi_aligned <- read_csv("data/sheep_genome/aligned_by_rudi/SheepHD_AgResearch_Cons_15041608_A.csv.rambo_pos_20190513.csv") %>% 

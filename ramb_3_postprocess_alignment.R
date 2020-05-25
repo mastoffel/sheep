@@ -4,7 +4,7 @@
 library(Rsamtools)
 library(snpStats)
 library(tidyverse)
-library(processx)
+#library(processx)
 library("corrr")
 
 # get HD SNP chip data

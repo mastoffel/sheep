@@ -30,10 +30,22 @@ snps_hd <- hd_snps %>%
             write_delim("data/sheep_genome/aligned/final_probe_alignments/new_hd_snps.txt", " ",
                 col_names = FALSE)
 
-system(paste0("~/programs/plink --bfile data/SNP_chip/Plates_1-2_HD_QC2 --sheep ",      # --out output/ROH/roh_nofilt
+# get newest sex info
+fitness_data <- read_delim("../sheep_ID/data/1_Annual_Fitness_Measures_April_20190501.txt", "\t") %>% 
+    group_by(ID) %>% 
+    slice(1) %>% 
+    dplyr::select(ID, SEX) %>% 
+    filter(!is.na(SEX)) %>% 
+    mutate(Fam_ID = 1) %>% 
+    dplyr::select(Fam_ID, ID, SEX) %>% 
+    mutate(SEX = ifelse((is.na(SEX) | (SEX=="Cas")), "0", SEX)) %>% 
+    write_delim("data/sheep_genome/aligned/final_probe_alignments/sex_info.txt", " ", col_names = FALSE)
+
+system(paste0("~/programs/plink --bfile data/SNP_chip/Plates_1-2_HD_QC2 --sheep ",      
               "--make-bed --out data/SNP_chip/ramb_mapping/Plates_1-2_HD_QC3_ram ",
               "--update-map data/sheep_genome/aligned/final_probe_alignments/new_hd_map_for_plink.txt ",
               "--update-chr data/sheep_genome/aligned/final_probe_alignments/new_hd_chr_for_plink.txt ",
+              "--update-sex data/sheep_genome/aligned/final_probe_alignments/sex_info.txt ",
               "--extract data/sheep_genome/aligned/final_probe_alignments/new_hd_snps.txt"))
 
 # produce new LD SNP chip plink file
@@ -56,6 +68,7 @@ system(paste0("~/programs/plink --bfile data/SNP_chip/Plates_1to87_QC3 --sheep "
               "--make-bed --out data/SNP_chip/ramb_mapping/Plates_1to87_QC4_ram ",
               "--update-map data/sheep_genome/aligned/final_probe_alignments/new_ld_map_for_plink.txt ",
               "--update-chr data/sheep_genome/aligned/final_probe_alignments/new_ld_chr_for_plink.txt ",
+              "--update-sex data/sheep_genome/aligned/final_probe_alignments/sex_info.txt ",
               "--extract data/sheep_genome/aligned/final_probe_alignments/new_ld_snps.txt "))
 
 # change IDs of all
